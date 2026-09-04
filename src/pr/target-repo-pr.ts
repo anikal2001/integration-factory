@@ -29,7 +29,7 @@ export interface PrResult {
 export async function preparePr(input: PrInput): Promise<PrResult> {
   const log = input.log ?? (() => {});
   const { sandbox, branch } = input;
-  const base = input.baseRef.replace(/^[^/]+\//, '');
+  const base = prBaseFromRef(input.baseRef);
 
   await sandbox.exec(`git add -A && git commit -q -m ${shellQuote(input.title)} --no-verify`);
   const committed = (await sandbox.exec('git log -1 --pretty=%s')).stdout.trim() === input.title;
@@ -57,6 +57,15 @@ export async function preparePr(input: PrInput): Promise<PrResult> {
   const url = pr.stdout.trim();
   log(`\n■ opened ${url}`);
   return { branch, base, committed, dryRun: false, opened: true, url };
+}
+
+/**
+ * `origin/main` → `main`; a local branch such as `integrations/foo` is left intact. Only
+ * the conventional `origin` remote is stripped — anything else is ambiguous with a
+ * slash-containing branch name.
+ */
+export function prBaseFromRef(baseRef: string): string {
+  return baseRef.replace(/^origin\//, '');
 }
 
 /** Quote for both POSIX sh and Git Bash; double quotes with the dangerous characters escaped. */

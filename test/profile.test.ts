@@ -3,7 +3,7 @@ import test from 'node:test';
 import { nameTokens, renderScaffold, renderScaffolds, renderTemplate, resolveProfile, scaffoldRelPaths } from '../src/profile.js';
 import { assertPlan, MARKETPLACE_SELLER_PLAN, WEB_APP_ACCOUNT_PLAN, planPhases } from '../src/discovery/plan.js';
 import { renderCaptureScaffold } from '../src/onboard.js';
-import { shellQuote } from '../src/pr/target-repo-pr.js';
+import { prBaseFromRef, shellQuote } from '../src/pr/target-repo-pr.js';
 
 test('name tokens cover every casing an integration file needs', () => {
   assert.deepEqual(nameTokens('acme pay-2'), { name: 'acme pay-2', Pascal: 'AcmePay2', camel: 'acmePay2', kebab: 'acme-pay-2', CONSTANT: 'ACME_PAY_2' });
@@ -77,6 +77,13 @@ test('capture scaffold renders a template or a generic module and never includes
   const templated = renderCaptureScaffold('fast-ship', candidates, endpoints, '/* {{Pascal}} */\n{{endpointsComment}}\nexport const x = {{endpointsJson}};');
   assert.match(templated, /^\/\* FastShip \*\//);
   assert.match(templated, /"observedDuring": \[\n\s+"serviceLevel"/);
+});
+
+test('the PR base strips only the origin remote', () => {
+  assert.equal(prBaseFromRef('origin/main'), 'main');
+  assert.equal(prBaseFromRef('origin/release/2026-09'), 'release/2026-09');
+  assert.equal(prBaseFromRef('integrations/profile'), 'integrations/profile');
+  assert.equal(prBaseFromRef('main'), 'main');
 });
 
 test('shell quoting survives quotes, dollars, backticks and newlines', () => {
