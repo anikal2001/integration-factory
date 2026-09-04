@@ -1,0 +1,32 @@
+{
+  "name": "integration-factory",
+  "version": "0.1.0",
+  "description": "Provider-agnostic orchestrator that builds third-party integrations into your codebase: sandbox → agent → verify → PR, plus safe browser discovery for targets without an API.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "private": true,
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "start": "tsx src/index.ts",
+    "demo": "tsx scripts/demo.ts",
+    "onboard": "tsx src/onboard-cli.ts",
+    "login": "tsx src/login-cli.ts",
+    "capture": "tsx src/capture-cli.ts",
+    "visual:smoke": "tsx scripts/visual-adviser-smoke.ts",
+    "test": "node --import tsx --test \"test/**/*.test.ts\"",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "playwright": "^1.48.0"
+  },
+  "optionalDependencies": {
+    "imapflow": "^1.0.171"
+  },
+  "devDependencies": {
+    "@types/node": "^22.9.0",
+    "tsx": "^4.19.2",
+    "typescript": "^5.6.3"
+  }
+}

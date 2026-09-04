@@ -1,0 +1,11 @@
+{
+  "name": "example-saas",
+  "startUrl": "https://app.example.com/",
+  "loginUrl": "https://app.example.com/login",
+  "plan": "web-app-account",
+  "requiresResidentialBrowser": false,
+  "login": {
+    "successSelector": "[data-testid='user-menu']"
+  },
+  "docsUrl": "https://developer.example.com/docs"
+}

@@ -1,0 +1,25 @@
+{
+  "name": "acme-billing",
+  "kind": "payments",
+  "contractFiles": [
+    "src/payments/IPaymentProvider.js",
+    "src/payments/BaseProvider.js"
+  ],
+  "scaffold": {
+    "path": "src/payments/providers/{{Pascal}}Provider.js",
+    "template": ".integration-factory/provider.template.js"
+  },
+  "registration": [
+    "Add '{{kebab}}' to PROVIDER_IDS in src/payments/registry.js",
+    "Map '{{kebab}}' to {{Pascal}}Provider in PROVIDERS in src/payments/registry.js"
+  ],
+  "verify": "node scripts/check-providers.mjs",
+  "docsDir": "docs/integrations",
+  "branchPrefix": "integrations/",
+  "baseRef": "origin/main",
+  "discoveryPlan": "web-app-account",
+  "captureScaffold": {
+    "path": "src/payments/captures/{{kebab}}.capture.js",
+    "template": ".integration-factory/capture.template.js"
+  }
+}

@@ -1,0 +1,89 @@
+// LocalSandbox — runs the loop in a git worktree of a local repo, via child_process.
+// This makes the whole orchestrator runnable with zero cloud credentials, so the
+// end-to-end loop (sandbox → agent → tools → verify → PR prep) is demonstrable now.
+// The cloud implementations (DaytonaSandbox, etc.) satisfy the same interface.
+
+import { spawn } from 'node:child_process';
+import { promises as fs } from 'node:fs';
+import path from 'node:path';
+import os from 'node:os';
+import type { ExecResult, Sandbox, SandboxFactory } from './sandbox.js';
+
+function run(command: string, cwd: string, timeoutMs: number): Promise<ExecResult> {
+  return new Promise((resolve) => {
+    const child = spawn(command, { cwd, shell: true });
+    let stdout = '';
+    let stderr = '';
+    const timer = setTimeout(() => child.kill('SIGKILL'), timeoutMs);
+    child.stdout.on('data', (d) => (stdout += d.toString()));
+    child.stderr.on('data', (d) => (stderr += d.toString()));
+    child.on('close', (code) => {
+      clearTimeout(timer);
+      resolve({ code: code ?? -1, stdout, stderr });
+    });
+    child.on('error', (err) => {
+      clearTimeout(timer);
+      resolve({ code: -1, stdout, stderr: stderr + String(err) });
+    });
+  });
+}
+
+class LocalSandbox implements Sandbox {
+  readonly kind = 'local';
+  constructor(
+    readonly root: string,
+    private readonly sourceRepo: string,
+    private readonly branch: string,
+  ) {}
+
+  async exec(command: string, opts: { timeoutMs?: number } = {}): Promise<ExecResult> {
+    return run(command, this.root, opts.timeoutMs ?? 120_000);
+  }
+
+  async readFile(relPath: string): Promise<string> {
+    return fs.readFile(path.join(this.root, relPath), 'utf8');
+  }
+
+  async writeFile(relPath: string, content: string): Promise<void> {
+    const abs = path.join(this.root, relPath);
+    await fs.mkdir(path.dirname(abs), { recursive: true });
+    await fs.writeFile(abs, content, 'utf8');
+  }
+
+  async listDir(relPath: string): Promise<string[]> {
+    return fs.readdir(path.join(this.root, relPath));
+  }
+
+  async dispose(): Promise<void> {
+    // Remove the worktree without touching the source repo's branches/commits.
+    await run(`git worktree remove "${this.root}" --force`, this.sourceRepo, 30_000);
+  }
+}
+
+export class LocalSandboxFactory implements SandboxFactory {
+  /**
+   * Bind a Sandbox to an existing directory without creating a worktree. Used by the
+   * demo/tests to run git commands in a repo they own; `dispose()` is a no-op.
+   */
+  async attach(root: string): Promise<Sandbox> {
+    const abs = path.resolve(root);
+    const sandbox = new LocalSandbox(abs, abs, '');
+    sandbox.dispose = async () => {};
+    return sandbox;
+  }
+
+  async create(input: { repo: string; baseRef: string; branch: string }): Promise<Sandbox> {
+    const sourceRepo = path.resolve(input.repo);
+    const wt = await fs.mkdtemp(path.join(os.tmpdir(), 'integration-factory-'));
+    const worktreePath = path.join(wt, 'repo');
+    const res = await run(
+      `git worktree add -b "${input.branch}" "${worktreePath}" "${input.baseRef}"`,
+      sourceRepo,
+      60_000,
+    );
+    if (res.code !== 0) {
+      throw new Error(`git worktree add failed: ${res.stderr || res.stdout}`);
+    }
+    return new LocalSandbox(worktreePath, sourceRepo, input.branch);
+  }
+}

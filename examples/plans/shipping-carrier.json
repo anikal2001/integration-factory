@@ -1,0 +1,49 @@
+{
+  "id": "shipping-carrier",
+  "description": "Account-side surfaces of a parcel carrier portal: shipment creation, service picker, address book, shipment history.",
+  "accountMenuHints": ["open account options", "account menu", "my account", "account", "profile"],
+  "distractionPattern": "\\b(?:news|blog|promotion|offers?|help|support|contact)\\b",
+  "surfaces": [
+    {
+      "id": "createShipment",
+      "hints": ["create a shipment", "create shipment", "new shipment", "ship now", "ship a package"],
+      "pathPattern": "\\/(?:ship|shipments?\\/(?:new|create))(?:\\/|$)",
+      "headingPattern": "^(?:create (?:a )?shipment|new shipment|ship a package)$",
+      "unfinishedOverlayPattern": "create (?:a )?shipment|package details|service options",
+      "signal": "shipments?|labels?|parcels?|packages?",
+      "controls": [
+        {
+          "id": "serviceLevel",
+          "hints": ["service", "service level", "delivery speed", "shipping service"],
+          "signal": "services?|rates?|quotes?|products?",
+          "enumerate": true
+        }
+      ]
+    },
+    {
+      "id": "addressBook",
+      "hints": ["address book", "saved addresses", "addresses"],
+      "pathPattern": "\\/(?:address(?:es|-book)?)(?:\\/|$)",
+      "headingPattern": "^(?:address book|saved addresses|addresses)$",
+      "menuLabelPattern": "^(?:address book|saved addresses|addresses)$",
+      "viaAccountMenu": true,
+      "signal": "address(?:es|book)?|contacts?"
+    },
+    {
+      "id": "history",
+      "hints": ["shipment history", "my shipments", "shipments", "history"],
+      "pathPattern": "\\/(?:shipments?|history)(?:\\/|$)",
+      "headingPattern": "^(?:shipment history|my shipments|shipments)$",
+      "menuLabelPattern": "^(?:shipment history|my shipments|shipments|history)$",
+      "viaAccountMenu": true,
+      "signal": "shipments?|history|tracking",
+      "controls": [
+        {
+          "id": "delivered",
+          "hints": ["delivered", "completed", "past shipments"],
+          "signal": "delivered|completed|status"
+        }
+      ]
+    }
+  ]
+}

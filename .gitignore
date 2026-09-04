@@ -1,0 +1,22 @@
+node_modules/
+.venv/
+__pycache__/
+*.pyc
+
+# Local secrets and sessions — never commit
+.env
+.env.*
+!.env.example
+storageState.json
+*.har
+*-navigation-memory.json
+
+# Discovery output
+out/
+.scratch/
+
+# Editor / OS
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
