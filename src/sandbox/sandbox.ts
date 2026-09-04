@@ -26,11 +26,23 @@ export interface Sandbox {
   dispose(): Promise<void>;
 }
 
+export interface SandboxCreateInput {
+  /** Local path (worktree providers) or git URL (cloud providers). */
+  repo: string;
+  baseRef: string;
+  branch: string;
+  /**
+   * Local-only hint: share the source checkout's node_modules with the sandbox instead
+   * of installing. Cloud providers ignore it and rely on the profile's `setup` command.
+   */
+  linkNodeModules?: boolean;
+}
+
 export interface SandboxFactory {
   /**
-   * Provision a sandbox with `repoUrlOrPath` checked out on a fresh `branch`.
+   * Provision a sandbox with `repo` checked out on a fresh `branch`.
    * Local implementations may use a git worktree of a path; cloud implementations
    * clone the URL.
    */
-  create(input: { repo: string; baseRef: string; branch: string }): Promise<Sandbox>;
+  create(input: SandboxCreateInput): Promise<Sandbox>;
 }

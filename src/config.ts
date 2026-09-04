@@ -16,6 +16,8 @@ export interface OrchestratorConfig {
   profilePath?: string;
   openPr: boolean;
   maxSteps: number;
+  /** Local sandboxes: junction/symlink the source repo's node_modules into the worktree. */
+  linkNodeModules: boolean;
 }
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): OrchestratorConfig {
@@ -37,6 +39,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): OrchestratorCo
     profilePath: env.PROFILE,
     openPr: env.OPEN_PR === 'true',
     maxSteps: env.MAX_STEPS ? Number(env.MAX_STEPS) : 12,
+    linkNodeModules: env.SANDBOX_LINK_NODE_MODULES === 'true',
   };
 }
 

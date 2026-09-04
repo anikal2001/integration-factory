@@ -51,6 +51,8 @@ Add `integration-factory.json` to the repo that receives integrations:
 
 Tokens: `{{name}}`, `{{Pascal}}`, `{{camel}}`, `{{kebab}}`, `{{CONSTANT}}`. See [`examples/sample-target-repo`](examples/sample-target-repo) for the complete shape, including a template and a real verify gate.
 
+An integration is often several files. `scaffold` also takes an array (adapter + client + types, each with its own template), `referenceFiles` names existing integrations the agent should imitate, and `setup` is a command run once in the fresh sandbox before the agent starts (e.g. `npm ci`). For fast local loops set `SANDBOX_LINK_NODE_MODULES=true` to junction/symlink your checkout's `node_modules` into the worktree instead; `setup` is then skipped.
+
 Then:
 
 ```bash

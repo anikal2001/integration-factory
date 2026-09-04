@@ -23,7 +23,7 @@ export function loadEnvFile(filePath: string, keys: string[]): string[] {
 }
 
 /** Keys the build loop reads. */
-export const MODEL_KEYS = ['MODEL_BASE_URL', 'MODEL_API_KEY', 'MODEL_NAME', 'SANDBOX_PROVIDER', 'DAYTONA_API_KEY', 'DAYTONA_API_URL', 'TARGET_REPO', 'BASE_REF', 'VERIFY_CMD', 'OPEN_PR', 'MAX_STEPS'];
+export const MODEL_KEYS = ['MODEL_BASE_URL', 'MODEL_API_KEY', 'MODEL_NAME', 'SANDBOX_PROVIDER', 'DAYTONA_API_KEY', 'DAYTONA_API_URL', 'TARGET_REPO', 'BASE_REF', 'VERIFY_CMD', 'OPEN_PR', 'MAX_STEPS', 'SANDBOX_LINK_NODE_MODULES'];
 
 /** Keys the browser CLIs read. */
 export const BROWSER_KEYS = [

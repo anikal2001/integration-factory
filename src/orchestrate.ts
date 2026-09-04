@@ -60,11 +60,18 @@ export async function orchestrate(input: OrchestrateInput): Promise<OrchestrateR
       : new LocalSandboxFactory());
 
   log(`▶ integrating "${input.integrationName}" into ${profile.name}${profile.kind ? ` (${profile.kind})` : ''}`);
-  const sandbox = await factory.create({ repo: targetRepo, baseRef, branch });
-  log(`  sandbox=${sandbox.kind} root=${sandbox.root} base=${baseRef} openPr=${config.openPr}`);
+  const sandbox = await factory.create({ repo: targetRepo, baseRef, branch, linkNodeModules: config.linkNodeModules });
+  log(`  sandbox=${sandbox.kind} root=${sandbox.root} base=${baseRef} openPr=${config.openPr}${config.linkNodeModules ? ' node_modules=linked' : ''}`);
 
   let keep = !config.openPr;
   try {
+    if (profile.setup && config.linkNodeModules && sandbox.kind === 'local') {
+      log(`  setup skipped: node_modules is linked from the source checkout (would have run "${profile.setup}")`);
+    } else if (profile.setup) {
+      log(`  setup: ${profile.setup}`);
+      const setup = await sandbox.exec(profile.setup, { timeoutMs: 900_000 });
+      if (setup.code !== 0) throw new Error(`profile setup command failed (${setup.code}): ${(setup.stderr || setup.stdout).slice(-2_000)}`);
+    }
     const scaffold = await planScaffold(profile, input.integrationName, sandbox);
     const model: ModelClient = input.model ?? (
       config.model.apiKey && config.model.baseUrl
@@ -76,9 +83,10 @@ export async function orchestrate(input: OrchestrateInput): Promise<OrchestrateR
       ? await sandbox.readFile(profile.playbook)
       : await readFile(path.join(here, 'playbooks', 'scaffold-integration.md'), 'utf8');
     const system = renderPlaybook(template, profile, input.integrationName);
+    const files = scaffold.files.map((f) => f.relPath);
     const task =
-      `Integrate "${input.integrationName}" into ${profile.name} by scaffolding it at ${scaffold.relPath} following the playbook. ` +
-      `Read the contract files before writing. Definition of done: the file exists, it satisfies the contract, and you have staged and reviewed the diff.`;
+      `Integrate "${input.integrationName}" into ${profile.name} by creating ${files.join(', ')} following the playbook. ` +
+      `Read the contract files before writing. Definition of done: every file exists, together they satisfy the contract, and you have staged and reviewed the diff.`;
 
     const agent = await runAgent({ model, sandbox, system, task, maxSteps: config.maxSteps, log });
     log(`\n■ agent ${agent.finished ? 'finished' : 'stopped'} in ${agent.steps} step(s): ${agent.summary}`);
@@ -92,7 +100,9 @@ export async function orchestrate(input: OrchestrateInput): Promise<OrchestrateR
       branch,
       baseRef,
       title: `feat(${tokens.kebab}): scaffold ${input.integrationName} integration`,
-      body: `Scaffolded by integration-factory for ${profile.name}.${scaffold.registration.length ? `\n\nRegistration TODOs:\n${scaffold.registration.map((s) => `- ${s}`).join('\n')}` : ''}`,
+      body:
+        `Scaffolded by integration-factory for ${profile.name}.\n\nFiles:\n${files.map((f) => `- ${f}`).join('\n')}` +
+        (scaffold.registration.length ? `\n\nRegistration TODOs:\n${scaffold.registration.map((s) => `- ${s}`).join('\n')}` : ''),
       openPr: config.openPr,
       verifyOk: v.ok,
       log,

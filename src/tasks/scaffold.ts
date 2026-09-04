@@ -1,15 +1,22 @@
 // The deterministic bits that surround the model for the "scaffold an integration" task:
-// render the profile's scaffold, run the verify command, build the playbook. The model
-// only makes judgment calls; everything here is plain code so it is cheap, repeatable,
-// and identical across providers.
+// render the profile's scaffold files, run the verify command, build the playbook. The
+// model only makes judgment calls; everything here is plain code so it is cheap,
+// repeatable, and identical across providers.
 
 import type { Sandbox } from '../sandbox/sandbox.js';
-import { nameTokens, renderRegistration, renderScaffold, renderTemplate, scaffoldRelPath, type ResolvedProfile } from '../profile.js';
+import {
+  nameTokens,
+  renderRegistration,
+  renderScaffolds,
+  renderTemplate,
+  scaffoldRelPaths,
+  type RenderedScaffold,
+  type ResolvedProfile,
+} from '../profile.js';
 
 export interface ScaffoldPlan {
   integrationName: string;
-  relPath: string;
-  content: string;
+  files: RenderedScaffold[];
   registration: string[];
 }
 
@@ -17,8 +24,7 @@ export interface ScaffoldPlan {
 export async function planScaffold(profile: ResolvedProfile, integrationName: string, sandbox: Pick<Sandbox, 'readFile'>): Promise<ScaffoldPlan> {
   return {
     integrationName,
-    relPath: scaffoldRelPath(profile, integrationName),
-    content: await renderScaffold(profile, integrationName, (rel) => sandbox.readFile(rel)),
+    files: await renderScaffolds(profile, integrationName, (rel) => sandbox.readFile(rel)),
     registration: renderRegistration(profile, integrationName),
   };
 }
@@ -27,13 +33,17 @@ export async function planScaffold(profile: ResolvedProfile, integrationName: st
 export function renderPlaybook(template: string, profile: ResolvedProfile, integrationName: string): string {
   const tokens = nameTokens(integrationName);
   const registration = renderRegistration(profile, integrationName);
+  const bullets = (items: string[], empty: string): string => (items.length ? items.map((i) => `- ${i}`).join('\n') : `- ${empty}`);
+  const paths = scaffoldRelPaths(profile, integrationName);
   return renderTemplate(template, {
     ...tokens,
     codebase: profile.name,
     kind: profile.kind ?? 'third-party',
-    contractFiles: profile.contractFiles.map((f) => `- \`${f}\``).join('\n') || '- (the profile lists no contract files — inspect the repo layout first)',
-    scaffoldPath: scaffoldRelPath(profile, integrationName),
-    registration: registration.map((s) => `- ${s}`).join('\n') || '- (none listed — look for a registry, enum, or factory map and record what you find as a TODO)',
+    contractFiles: bullets(profile.contractFiles.map((f) => `\`${f}\``), '(the profile lists no contract files — inspect the repo layout first)'),
+    referenceFiles: bullets(profile.referenceFiles.map((f) => `\`${f}\``), '(none listed — use `list_dir` next to the contract files to find one)'),
+    scaffoldPath: paths[0],
+    scaffoldFiles: bullets(paths.map((p) => `\`${p}\``), '(the profile lists no scaffold paths)'),
+    registration: bullets(registration, '(none listed — look for a registry, enum, or factory map and record what you find as a TODO)'),
     verify: profile.verify ?? '(none configured)',
   });
 }

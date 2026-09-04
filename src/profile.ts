@@ -1,5 +1,5 @@
 // An IntegrationProfile tells the orchestrator what "an integration" looks like inside a
-// particular codebase: which contract files define it, where the new module goes, how it
+// particular codebase: which contract files define it, where the new module(s) go, how it
 // is registered, and how the change is verified. It lives in the TARGET repo as
 // `integration-factory.json`, so the orchestrator itself stays generic — a marketplace
 // adapter, a payment provider, a shipping carrier, a CRM connector, or an SSO plugin are
@@ -31,9 +31,14 @@ export interface IntegrationProfile {
   kind?: string;
   /** Repo-relative files the agent must read before writing anything. */
   contractFiles: string[];
-  scaffold: ScaffoldSpec;
+  /** Existing integrations the agent should imitate (read-only examples). */
+  referenceFiles?: string[];
+  /** One file or several — an integration is often an adapter + client + types. */
+  scaffold: ScaffoldSpec | ScaffoldSpec[];
   /** Registration steps recorded as TODOs (or performed when trivially safe). Name tokens allowed. */
   registration?: string[];
+  /** Command run once in the fresh sandbox before the agent starts, e.g. "npm ci". Must exit 0. */
+  setup?: string;
   /** Command that must exit 0 before a PR is opened, e.g. "npm run build". */
   verify?: string;
   /** Repo-relative markdown playbook overriding the built-in one. Same tokens as templates. */
@@ -49,11 +54,20 @@ export interface IntegrationProfile {
   captureScaffold?: CaptureScaffoldSpec;
 }
 
-export interface ResolvedProfile extends Required<Pick<IntegrationProfile, 'name' | 'contractFiles' | 'scaffold' | 'docsDir' | 'branchPrefix' | 'baseRef' | 'discoveryPlan'>> {
+export interface ResolvedProfile {
+  name: string;
   kind?: string;
+  contractFiles: string[];
+  referenceFiles: string[];
+  scaffolds: ScaffoldSpec[];
   registration: string[];
+  setup?: string;
   verify?: string;
   playbook?: string;
+  docsDir: string;
+  branchPrefix: string;
+  baseRef: string;
+  discoveryPlan: string;
   captureScaffold?: CaptureScaffoldSpec;
   /** Absolute path of the file the profile was loaded from. */
   sourcePath: string;
@@ -66,21 +80,34 @@ export function resolveProfile(raw: unknown, sourcePath: string): ResolvedProfil
   if (!Array.isArray(profile.contractFiles) || profile.contractFiles.some((f) => typeof f !== 'string')) {
     throw new Error(`${sourcePath}: "contractFiles" must be an array of repo-relative paths`);
   }
-  if (!profile.scaffold || typeof profile.scaffold.path !== 'string') {
-    throw new Error(`${sourcePath}: "scaffold.path" is required`);
+  if (profile.referenceFiles !== undefined && (!Array.isArray(profile.referenceFiles) || profile.referenceFiles.some((f) => typeof f !== 'string'))) {
+    throw new Error(`${sourcePath}: "referenceFiles" must be an array of repo-relative paths`);
   }
-  for (const [key, value] of Object.entries({ docsDir: profile.docsDir, branchPrefix: profile.branchPrefix, baseRef: profile.baseRef, verify: profile.verify, playbook: profile.playbook, discoveryPlan: profile.discoveryPlan })) {
+  const scaffolds = Array.isArray(profile.scaffold) ? profile.scaffold : profile.scaffold ? [profile.scaffold] : [];
+  if (scaffolds.length === 0 || scaffolds.some((s) => !s || typeof s.path !== 'string')) {
+    throw new Error(`${sourcePath}: "scaffold" must be one object or an array of objects, each with a "path"`);
+  }
+  for (const [key, value] of Object.entries({ docsDir: profile.docsDir, branchPrefix: profile.branchPrefix, baseRef: profile.baseRef, setup: profile.setup, verify: profile.verify, playbook: profile.playbook, discoveryPlan: profile.discoveryPlan })) {
     if (value !== undefined && typeof value !== 'string') throw new Error(`${sourcePath}: "${key}" must be a string`);
   }
-  for (const rel of [...profile.contractFiles, profile.scaffold.path, profile.scaffold.template, profile.playbook, profile.captureScaffold?.path, profile.captureScaffold?.template]) {
+  for (const rel of [
+    ...profile.contractFiles,
+    ...(profile.referenceFiles ?? []),
+    ...scaffolds.flatMap((s) => [s.path, s.template]),
+    profile.playbook,
+    profile.captureScaffold?.path,
+    profile.captureScaffold?.template,
+  ]) {
     if (rel !== undefined) assertRepoRelative(rel, sourcePath);
   }
   return {
     name: profile.name,
     kind: profile.kind,
     contractFiles: profile.contractFiles,
-    scaffold: profile.scaffold,
+    referenceFiles: profile.referenceFiles ?? [],
+    scaffolds,
     registration: profile.registration ?? [],
+    setup: profile.setup,
     verify: profile.verify,
     playbook: profile.playbook,
     docsDir: profile.docsDir ?? 'docs/integrations',
@@ -145,8 +172,15 @@ export function renderTemplate(template: string, tokens: Record<string, string>)
   );
 }
 
+/** Every output path the profile produces for this integration, in profile order. */
+export function scaffoldRelPaths(profile: ResolvedProfile, integrationName: string): string[] {
+  const tokens = nameTokens(integrationName);
+  return profile.scaffolds.map((s) => renderTemplate(s.path, tokens));
+}
+
+/** The primary (first) output path — used in PR titles and log lines. */
 export function scaffoldRelPath(profile: ResolvedProfile, integrationName: string): string {
-  return renderTemplate(profile.scaffold.path, nameTokens(integrationName));
+  return scaffoldRelPaths(profile, integrationName)[0];
 }
 
 export function renderRegistration(profile: ResolvedProfile, integrationName: string): string[] {
@@ -154,26 +188,49 @@ export function renderRegistration(profile: ResolvedProfile, integrationName: st
   return profile.registration.map((step) => renderTemplate(step, tokens));
 }
 
+export interface RenderedScaffold {
+  relPath: string;
+  content: string;
+}
+
 /**
  * The scaffold content the deterministic path writes. With a template file it is the
  * rendered template; without one it is a minimal stub whose header carries the contract
  * and registration TODOs so a reviewer (or the next agent run) knows what is missing.
  */
-export async function renderScaffold(profile: ResolvedProfile, integrationName: string, readRepoFile: (rel: string) => Promise<string>): Promise<string> {
+export async function renderScaffolds(
+  profile: ResolvedProfile,
+  integrationName: string,
+  readRepoFile: (rel: string) => Promise<string>,
+): Promise<RenderedScaffold[]> {
   const tokens = nameTokens(integrationName);
-  if (profile.scaffold.template) {
-    return renderTemplate(await readRepoFile(profile.scaffold.template), tokens);
-  }
   const registration = renderRegistration(profile, integrationName);
-  return [
-    `// ${tokens.Pascal} integration — SCAFFOLD generated by integration-factory.`,
-    `// Contract: ${profile.contractFiles.join(', ') || '(none listed in the profile)'}`,
-    ...(registration.length ? ['// Registration TODOs:', ...registration.map((s) => `//   - ${s}`)] : []),
-    '',
-    `export class ${tokens.Pascal}Integration {`,
-    `  readonly name = '${tokens.kebab}';`,
-    '  // TODO: implement the methods required by the contract files above.',
-    '}',
-    '',
-  ].join('\n');
+  const rendered: RenderedScaffold[] = [];
+  for (const spec of profile.scaffolds) {
+    const relPath = renderTemplate(spec.path, tokens);
+    if (spec.template) {
+      rendered.push({ relPath, content: renderTemplate(await readRepoFile(spec.template), tokens) });
+      continue;
+    }
+    rendered.push({
+      relPath,
+      content: [
+        `// ${tokens.Pascal} integration — SCAFFOLD generated by integration-factory (${path.posix.basename(relPath)}).`,
+        `// Contract: ${profile.contractFiles.join(', ') || '(none listed in the profile)'}`,
+        ...(registration.length ? ['// Registration TODOs:', ...registration.map((s) => `//   - ${s}`)] : []),
+        '',
+        `export class ${tokens.Pascal}Integration {`,
+        `  readonly name = '${tokens.kebab}';`,
+        '  // TODO: implement the methods required by the contract files above.',
+        '}',
+        '',
+      ].join('\n'),
+    });
+  }
+  return rendered;
+}
+
+/** Single-file convenience over `renderScaffolds`. */
+export async function renderScaffold(profile: ResolvedProfile, integrationName: string, readRepoFile: (rel: string) => Promise<string>): Promise<string> {
+  return (await renderScaffolds(profile, integrationName, readRepoFile))[0].content;
 }

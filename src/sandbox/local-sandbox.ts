@@ -4,10 +4,10 @@
 // The cloud implementations (DaytonaSandbox, etc.) satisfy the same interface.
 
 import { spawn } from 'node:child_process';
-import { promises as fs } from 'node:fs';
+import { existsSync, promises as fs } from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
-import type { ExecResult, Sandbox, SandboxFactory } from './sandbox.js';
+import type { ExecResult, Sandbox, SandboxCreateInput, SandboxFactory } from './sandbox.js';
 
 function run(command: string, cwd: string, timeoutMs: number): Promise<ExecResult> {
   return new Promise((resolve) => {
@@ -55,6 +55,9 @@ class LocalSandbox implements Sandbox {
   }
 
   async dispose(): Promise<void> {
+    // A linked node_modules is a junction/symlink: unlink it first so `worktree remove`
+    // never descends into the source repo's dependencies.
+    await fs.unlink(path.join(this.root, 'node_modules')).catch(() => {});
     // Remove the worktree without touching the source repo's branches/commits.
     await run(`git worktree remove "${this.root}" --force`, this.sourceRepo, 30_000);
   }
@@ -72,7 +75,7 @@ export class LocalSandboxFactory implements SandboxFactory {
     return sandbox;
   }
 
-  async create(input: { repo: string; baseRef: string; branch: string }): Promise<Sandbox> {
+  async create(input: SandboxCreateInput): Promise<Sandbox> {
     const sourceRepo = path.resolve(input.repo);
     const wt = await fs.mkdtemp(path.join(os.tmpdir(), 'integration-factory-'));
     const worktreePath = path.join(wt, 'repo');
@@ -84,6 +87,24 @@ export class LocalSandboxFactory implements SandboxFactory {
     if (res.code !== 0) {
       throw new Error(`git worktree add failed: ${res.stderr || res.stdout}`);
     }
+    if (input.linkNodeModules) await linkNodeModules(sourceRepo, worktreePath);
     return new LocalSandbox(worktreePath, sourceRepo, input.branch);
   }
+}
+
+/**
+ * Share the source checkout's installed dependencies with the worktree instead of
+ * re-installing them: a directory junction on Windows, a symlink elsewhere. Only for
+ * local iteration — CI and cloud sandboxes should run the profile's `setup` command.
+ */
+async function linkNodeModules(sourceRepo: string, worktreePath: string): Promise<void> {
+  const source = path.join(sourceRepo, 'node_modules');
+  const target = path.join(worktreePath, 'node_modules');
+  if (!existsSync(source) || existsSync(target)) return;
+  if (process.platform === 'win32') {
+    const res = await run(`cmd /c mklink /J "${target}" "${source}"`, worktreePath, 30_000);
+    if (res.code !== 0) throw new Error(`could not junction node_modules: ${res.stderr || res.stdout}`);
+    return;
+  }
+  await fs.symlink(source, target, 'dir');
 }

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { nameTokens, renderScaffold, renderTemplate, resolveProfile } from '../src/profile.js';
+import { nameTokens, renderScaffold, renderScaffolds, renderTemplate, resolveProfile, scaffoldRelPaths } from '../src/profile.js';
 import { assertPlan, MARKETPLACE_SELLER_PLAN, WEB_APP_ACCOUNT_PLAN, planPhases } from '../src/discovery/plan.js';
 import { renderCaptureScaffold } from '../src/onboard.js';
 import { shellQuote } from '../src/pr/target-repo-pr.js';
@@ -23,6 +23,27 @@ test('profiles get defaults and reject unsafe paths', () => {
   assert.equal(profile.discoveryPlan, 'marketplace-seller');
   assert.throws(() => resolveProfile({ name: 'svc', contractFiles: [], scaffold: { path: '../escape.ts' } }, 'x.json'), /repo-relative/);
   assert.throws(() => resolveProfile({ contractFiles: [], scaffold: { path: 'a' } }, 'x.json'), /"name" is required/);
+  assert.throws(() => resolveProfile({ name: 'svc', contractFiles: [], scaffold: [] }, 'x.json'), /"scaffold" must be/);
+});
+
+test('multi-file scaffolds render every file in profile order', async () => {
+  const profile = resolveProfile({
+    name: 'svc',
+    contractFiles: ['src/IThing.ts'],
+    scaffold: [
+      { path: 'src/{{Pascal}}Adapter.ts', template: 'tpl/adapter.ts' },
+      { path: 'src/services/{{kebab}}/index.ts' },
+    ],
+    setup: 'npm ci',
+    referenceFiles: ['src/ExistingAdapter.ts'],
+  }, 'x.json');
+  assert.equal(profile.setup, 'npm ci');
+  assert.deepEqual(profile.referenceFiles, ['src/ExistingAdapter.ts']);
+  assert.deepEqual(scaffoldRelPaths(profile, 'fast ship'), ['src/FastShipAdapter.ts', 'src/services/fast-ship/index.ts']);
+  const files = await renderScaffolds(profile, 'fast ship', async (rel) => `// ${rel} for {{Pascal}}`);
+  assert.deepEqual(files.map((f) => f.relPath), ['src/FastShipAdapter.ts', 'src/services/fast-ship/index.ts']);
+  assert.equal(files[0].content, '// tpl/adapter.ts for FastShip');
+  assert.match(files[1].content, /export class FastShipIntegration/);
 });
 
 test('scaffold rendering uses the template when present and a generic stub otherwise', async () => {
